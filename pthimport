@@ -1,0 +1,43 @@
+#!/bin/bash
+set -e
+
+USERNAME=
+MUSIC_LIBRARY_PATH=/srv/music
+WATCH_PATH=/srv/deluge/watch
+ORIGINAL_ALBUM_NAME="$1"
+
+# hardlink album
+cp -r --link -- "$ORIGINAL_ALBUM_NAME" "$MUSIC_LIBRARY_PATH"
+
+# rename album
+cd -- "$MUSIC_LIBRARY_PATH"
+beet import "$ORIGINAL_ALBUM_NAME"
+# TO-DO to get rid of bug use -f option and define format
+NEW_ALBUM_PATH=`beet list -ap | tail --lines=1`
+# bug in beets can cause the last line to return
+# $NEW_ALBUM_PATH/CD1.
+if [[ $NEW_ALBUM_PATH == */CD? ]]; then
+    NEW_ALBUM_PATH=${NEW_ALBUM_PATH%/*}
+fi
+# if the user aborts beets inputing 'B', then this is where
+# the first error will be thrown. In that case, clean up
+# the hardlinked directory and make sure to exit.
+beet remove -f || ( rm -R --force -- "./$ORIGINAL_ALBUM_NAME" && exit 2 )
+# TO-DO avoid rm -R --force
+
+# copy over attachments
+cd -- "$ORIGINAL_ALBUM_NAME"
+OLD_ALBUM_PATH=$PWD
+find "$OLD_ALBUM_PATH" -type f -name '*.m3u' -exec rm -- {} \;
+if [ "$OLD_ALBUM_PATH" != "$NEW_ALBUM_PATH" ]; then
+    find "$OLD_ALBUM_PATH" -mindepth 1 -maxdepth 1 -exec cp -rv -- {} 
+"$NEW_ALBUM_PATH" \;
+fi
+
+# clean up old directory
+cd ..
+rm -R --force -- "./$ORIGINAL_ALBUM_NAME"
+# TO-DO avoid rm -R --force
+
+# create .torrent file
+autotunes -o "$WATCH_PATH" -- "$USERNAME" "$NEW_ALBUM_PATH"
